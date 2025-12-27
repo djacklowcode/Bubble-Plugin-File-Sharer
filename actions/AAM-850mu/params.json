@@ -1,0 +1,56 @@
+{
+    "category": "plugins",
+    "display": "Generate sharable url",
+    "fields": {
+        "AAL": {
+            "caption": "List of Bubble File URLs",
+            "doc": "Pass a list of bubble file URLS to presign (current beta max is 10 files).",
+            "editor": "DynamicValue",
+            "is_list": true,
+            "name": "file_urls",
+            "optional": true,
+            "rank": 2,
+            "value": "text"
+        },
+        "AAQ": {
+            "caption": "Bubble File URL",
+            "doc": "Pass a bubble file URL to presign.",
+            "editor": "DynamicValue",
+            "name": "file_url",
+            "optional": true,
+            "rank": 0,
+            "value": "text"
+        },
+        "AAR": {
+            "caption": "List of files?",
+            "default_val": false,
+            "doc": "Tick this box if you would like to send a list of urls. Disables the single file input.",
+            "editor": "Checkbox",
+            "name": "fileList",
+            "rank": 1
+        }
+    },
+    "return_value": {
+        "AAI": {
+            "caption": "sharable url(s)",
+            "is_list": true,
+            "name": "signed_urls",
+            "rank": 0,
+            "value": "text"
+        },
+        "AAU": {
+            "caption": "returned error?",
+            "name": "returned_error",
+            "rank": 1,
+            "value": "boolean"
+        },
+        "AAV": {
+            "caption": "error message",
+            "name": "error_message",
+            "rank": 2,
+            "value": "text"
+        }
+    },
+    "type": "server_side",
+    "use_packages": true
+}

@@ -1,0 +1,12 @@
+{
+    "dependencies": {
+        "plugin_api_version": 4,
+        "use_jquery": false
+    },
+    "shared_keys": {
+        "AAF": {
+            "caption": "api_key",
+            "type": "secure"
+        }
+    }
+}
