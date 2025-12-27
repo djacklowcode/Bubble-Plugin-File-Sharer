@@ -7,6 +7,10 @@
         "AAF": {
             "caption": "api_key",
             "type": "secure"
+        },
+        "AAW": {
+            "caption": "whitelisted_domains",
+            "type": "secure"
         }
     }
 }
