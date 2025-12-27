@@ -31,6 +31,84 @@ async function(properties, context) {
         };
     }
 
+    // Validate domains if enabled
+    if (await properties.validate_domain === true) {
+        // Get whitelisted domains from context and parse them
+        const whitelistedDomainsStr = context.keys.whitelisted_domains || "";
+        const customDomains = whitelistedDomainsStr
+            .split(",")
+            .map(domain => {
+                // Trim whitespace
+                domain = domain.trim().toLowerCase();
+                
+                // Remove protocol (http://, https://, //)
+                domain = domain.replace(/^(https?:)?\/\//, "");
+                
+                // Remove trailing slash and path
+                domain = domain.split("/")[0];
+                
+                return domain;
+            })
+            .filter(domain => domain !== "");
+        
+        // Always include bubble.io
+        const allowedDomains = ["bubble.io", ...customDomains];
+
+        // Function to extract domain from URL
+        function extractDomain(url) {
+            try {
+                let normalizedUrl = url;
+                if (!url.startsWith('http')) {
+                    if (url.startsWith('//')) {
+                        normalizedUrl = 'https:' + url;
+                    } else {
+                        normalizedUrl = 'https://' + url;
+                    }
+                }
+                const urlObj = new URL(normalizedUrl);
+                return urlObj.hostname.toLowerCase();
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // Function to check if a domain is whitelisted
+        function isDomainWhitelisted(domain, allowedDomains) {
+            if (!domain) return false;
+            
+            // Check for exact match or subdomain match for bubble.io
+            return allowedDomains.some(allowedDomain => {
+                if (domain === allowedDomain) return true;
+                // Allow subdomains of whitelisted domains
+                if (domain.endsWith('.' + allowedDomain)) return true;
+                return false;
+            });
+        }
+
+        // Validate all domains
+        const invalidUrls = [];
+        for (let i = 0; i < urlArray.length; i++) {
+            const domain = extractDomain(urlArray[i]);
+            if (!isDomainWhitelisted(domain, allowedDomains)) {
+                invalidUrls.push({
+                    index: i,
+                    url: urlArray[i],
+                    domain: domain
+                });
+            }
+        }
+
+        if (invalidUrls.length > 0) {
+            const errorDetails = invalidUrls
+                .map(item => `URL[${item.index}] "${item.url}" (domain: ${item.domain || 'invalid'})`)
+                .join("; ");
+            return {
+                returned_error: true,
+                error_message: `Domain validation failed for ${invalidUrls.length} URL(s). Allowed domains: ${allowedDomains.join(", ")}. Failed: ${errorDetails}`
+            };
+        }
+    }
+
 
     //Get the signed url (if applicable)
     function getRedirect(url) {
