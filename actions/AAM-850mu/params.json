@@ -28,6 +28,14 @@
             "editor": "Checkbox",
             "name": "fileList",
             "rank": 1
+        },
+        "AAX": {
+            "caption": "Validate Domain?",
+            "default_val": false,
+            "doc": "This is an experimental feature to validate the URLs provided in the plugin call. This uses a comma separated list of whitelisted domains in addition to the bubble.io domain. This ensures that the API calls are not sent to an unexpected external service. Provide whitelisted domains in the plugin settings (e.g. myapp.com,d1234.bubble.is,...any others)",
+            "editor": "Checkbox",
+            "name": "validate_domain",
+            "rank": 3
         }
     },
     "return_value": {
