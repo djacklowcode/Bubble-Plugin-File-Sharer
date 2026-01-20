@@ -31,82 +31,74 @@ async function(properties, context) {
         };
     }
 
-    // Validate domains if enabled
-    if (await properties.validate_domain === true) {
-        // Get whitelisted domains from context and parse them
-        const whitelistedDomainsStr = context.keys.whitelisted_domains || "";
-        const customDomains = whitelistedDomainsStr
-            .split(",")
-            .map(domain => {
-                // Trim whitespace
-                domain = domain.trim().toLowerCase();
-                
-                // Remove protocol (http://, https://, //)
-                domain = domain.replace(/^(https?:)?\/\//, "");
-                
-                // Remove trailing slash and path
-                domain = domain.split("/")[0];
-                
-                return domain;
-            })
-            .filter(domain => domain !== "");
-        
-        // Always include bubble.io
-        const allowedDomains = ["bubble.io", ...customDomains];
+    // Parse whitelisted domains (used for both validation and auth header decisions)
+    const whitelistedDomainsStr = context.keys.whitelisted_domains || "";
+    const customDomains = whitelistedDomainsStr
+        .split(",")
+        .map(domain => {
+            domain = domain.trim().toLowerCase();
+            domain = domain.replace(/^(https?:)?\/\//, "");
+            domain = domain.split("/")[0];
+            return domain;
+        })
+        .filter(domain => domain !== "");
+    
+    // Trusted domains: cdn.bubble.io (not bubble.io to prevent other Bubble apps capturing the key) + custom domains
+    const trustedDomains = ["cdn.bubble.io", ...customDomains];
+    
+    // Domains that require auth header (custom domains only, not cdn.bubble.io as it's already open)
+    const authRequiredDomains = [...customDomains];
 
-        // Function to extract domain from URL
-        function extractDomain(url) {
-            try {
-                let normalizedUrl = url;
-                if (!url.startsWith('http')) {
-                    if (url.startsWith('//')) {
-                        normalizedUrl = 'https:' + url;
-                    } else {
-                        normalizedUrl = 'https://' + url;
-                    }
-                }
-                const urlObj = new URL(normalizedUrl);
-                return urlObj.hostname.toLowerCase();
-            } catch (e) {
-                return null;
+    // Function to extract domain from URL
+    function extractDomain(url) {
+        try {
+            let normalizedUrl = url;
+            if (!url.startsWith('http')) {
+                normalizedUrl = url.startsWith('//') ? 'https:' + url : 'https://' + url;
             }
+            return new URL(normalizedUrl).hostname.toLowerCase();
+        } catch (e) {
+            return null;
         }
+    }
 
-        // Function to check if a domain is whitelisted
-        function isDomainWhitelisted(domain, allowedDomains) {
-            if (!domain) return false;
-            
-            // Check for exact match or subdomain match for bubble.io
-            return allowedDomains.some(allowedDomain => {
-                if (domain === allowedDomain) return true;
-                // Allow subdomains of whitelisted domains
-                if (domain.endsWith('.' + allowedDomain)) return true;
-                return false;
+    // Function to check if a domain is whitelisted
+    function isDomainWhitelisted(domain) {
+        if (!domain) return false;
+        return trustedDomains.some(allowedDomain => 
+            domain === allowedDomain || domain.endsWith('.' + allowedDomain)
+        );
+    }
+    
+    // Function to check if a domain requires auth header
+    function isDomainAuthRequired(domain) {
+        if (!domain) return false;
+        return authRequiredDomains.some(allowedDomain => 
+            domain === allowedDomain || domain.endsWith('.' + allowedDomain)
+        );
+    }
+
+    // Validate all domains (mandatory)
+    const invalidUrls = [];
+    for (let i = 0; i < urlArray.length; i++) {
+        const domain = extractDomain(urlArray[i]);
+        if (!isDomainWhitelisted(domain)) {
+            invalidUrls.push({
+                index: i,
+                url: urlArray[i],
+                domain: domain
             });
         }
+    }
 
-        // Validate all domains
-        const invalidUrls = [];
-        for (let i = 0; i < urlArray.length; i++) {
-            const domain = extractDomain(urlArray[i]);
-            if (!isDomainWhitelisted(domain, allowedDomains)) {
-                invalidUrls.push({
-                    index: i,
-                    url: urlArray[i],
-                    domain: domain
-                });
-            }
-        }
-
-        if (invalidUrls.length > 0) {
-            const errorDetails = invalidUrls
-                .map(item => `URL[${item.index}] "${item.url}" (domain: ${item.domain || 'invalid'})`)
-                .join("; ");
-            return {
-                returned_error: true,
-                error_message: `Domain validation failed for ${invalidUrls.length} URL(s). Allowed domains: ${allowedDomains.join(", ")}. Failed: ${errorDetails}`
-            };
-        }
+    if (invalidUrls.length > 0) {
+        const errorDetails = invalidUrls
+            .map(item => `URL[${item.index}] "${item.url}" (domain: ${item.domain || 'invalid'})`)
+            .join("; ");
+        return {
+            returned_error: true,
+            error_message: `Domain validation failed for ${invalidUrls.length} URL(s). Allowed domains: ${trustedDomains.join(", ")}. Failed: ${errorDetails}`
+        };
     }
 
 
@@ -114,21 +106,29 @@ async function(properties, context) {
     function getRedirect(url) {
         return context.v3.async(async callback => {
             let signedUrl = url;
+            let headers = {};
             
             // Normalize and validate URL
             try {
-                // Check if URL starts with 'http', if not, prepend 'https://'
-                if (!url.startsWith('http')) {
-                    // Handle protocol-relative URLs
-                    if (url.startsWith('//')) {
-                        signedUrl = 'https:' + url;
-                    } else {
-                        signedUrl = 'https://' + url;
-                    }
+                // Reject explicit HTTP URLs (security: only HTTPS allowed)
+                if (url.toLowerCase().startsWith('http://')) {
+                    callback(new Error(`HTTP URLs are not allowed (HTTPS required): ${url}`));
+                    return;
                 }
                 
-                // Validate URL format by creating URL object
-                new URL(signedUrl);
+                // Check if URL starts with 'https', if not, prepend 'https://'
+                if (!url.startsWith('https')) {
+                    signedUrl = url.startsWith('//') ? 'https:' + url : 'https://' + url;
+                }
+                
+                // Validate URL format
+                const urlObj = new URL(signedUrl);
+                
+                // Only send auth header to custom domains (not cdn.bubble.io as it's already open)
+                const hostname = urlObj.hostname.toLowerCase();
+                if (isDomainAuthRequired(hostname)) {
+                    headers = { Authorization: `Bearer ${key}` };
+                }
             } catch (urlError) {
                 callback(new Error(`Invalid URL format: ${url}`));
                 return;
@@ -136,11 +136,11 @@ async function(properties, context) {
 
             let response;
             try {
-                // Try the authenticated request first
+                // Try the authenticated request first (only sends auth to trusted domains)
                 response = await axios.head(signedUrl, {
                     maxRedirects: 0,
                     validateStatus: status => status === 302 || (status >= 200 && status < 300),
-                    headers: { Authorization: `Bearer ${key}` }
+                    headers: headers
                 });
             } catch (authError) {
                 try {
